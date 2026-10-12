@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Plat'Est – Alsace Trafic Temps Réel</title>
+  <meta name="description" content="Observatoire cartographique et trafic routier alsacien en temps réel. Données TomTom Traffic API." />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg:#0A0E1A; --surface:#111827; --panel:rgba(17,24,39,0.92); --border:rgba(255,255,255,0.07);
+      --accent:#00C6FF; --accent2:#00FF88; --danger:#FF4D4D; --warning:#FFA726;
+      --text:#E8EBF0; --muted:#8892B0; --radius:12px; --shadow:0 8px 32px rgba(0,0,0,0.5);
+      --sidebar-w:400px;
+    }
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%;font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);overflow:hidden}
+    #app{display:flex;flex-direction:column;height:100vh}
+    /* Header */
+    #header{flex:0 0 auto;background:linear-gradient(135deg,#0d1b3e 0%,#1a2744 50%,#0d1b3e 100%);border-bottom:1px solid var(--border);padding:8px 16px;display:flex;align-items:center;justify-content:space-between;gap:16px;box-shadow:0 4px 24px rgba(0,0,0,0.4);z-index:1000}
+    #header h1{font-size:1.35rem;font-weight:800;letter-spacing:-0.5px;background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+    #header p{font-size:0.72rem;color:var(--muted);margin-top:1px}
+    #header-right{display:flex;align-items:center;gap:14px}
+    #clock{font-size:0.78rem;color:var(--muted);background:rgba(0,0,0,0.3);padding:4px 10px;border-radius:20px;border:1px solid var(--border);white-space:nowrap}
+    #refresh-btn{background:linear-gradient(135deg,var(--accent),#0072ff);border:none;border-radius:8px;color:#fff;font-size:0.75rem;font-weight:600;padding:5px 12px;cursor:pointer;transition:opacity .2s,transform .1s}
+    #refresh-btn:hover{opacity:.85;transform:translateY(-1px)}
+    .status-pill{display:flex;align-items:center;gap:6px;font-size:0.72rem;padding:3px 8px;border-radius:20px;border:1px solid var(--border);background:rgba(0,0,0,0.3)}
+    .status-dot{width:7px;height:7px;border-radius:50%;background:var(--accent2);animation:pulse 2s infinite}
+    @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(1.3)}}
+    /* Weather */
+    #weather-bar{flex:0 0 auto;display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);border-bottom:1px solid var(--border)}
+    .weather-card{background:var(--surface);padding:6px 12px;display:flex;align-items:center;justify-content:space-between;transition:background .2s}
+    .weather-card:hover{background:#1a2440}
+    .weather-city{font-size:0.72rem;font-weight:700;color:var(--accent)}
+    .weather-cond{font-size:0.68rem;color:var(--muted)}
+    .weather-temp{font-size:0.95rem;font-weight:700}
+    .weather-icon{font-size:1.1rem}
+    .weather-wind{font-size:0.62rem;color:var(--muted)}
+    /* Body */
+    #body{flex:1 1 auto;display:flex;min-height:0}
+    /* Sidebar */
+    #sidebar{flex:0 0 var(--sidebar-w);background:var(--panel);backdrop-filter:blur(12px);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;z-index:500}
+    .sidebar-section{padding:8px 12px;border-bottom:1px solid var(--border)}
+    .sidebar-section h3{font-size:0.68rem;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+    .layer-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
+    .layer-row label{font-size:0.78rem;cursor:pointer}
+    .toggle{appearance:none;width:30px;height:16px;background:#2a2a3a;border-radius:8px;cursor:pointer;position:relative;transition:background .2s}
+    .toggle:checked{background:var(--accent)}
+    .toggle::before{content:'';position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#fff;transition:transform .2s}
+    .toggle:checked::before{transform:translateX(14px)}
+    .preset-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}
+    .preset-btn{background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:0.68rem;font-weight:500;padding:5px 4px;cursor:pointer;text-align:center;transition:background .15s,border-color .15s,transform .1s;font-family:'Inter',sans-serif}
+    .preset-btn:hover{background:rgba(0,198,255,0.12);border-color:var(--accent)}
+    #incident-header{padding:8px 12px 4px;display:flex;align-items:center;justify-content:space-between}
+    #incident-header h3{font-size:0.68rem;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:var(--muted)}
+    #inc-count{font-size:0.72rem;font-weight:700;color:var(--accent)}
+    #search-box{margin:0 12px 6px;width:calc(100% - 24px);background:rgba(255,255,255,0.05);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'Inter',sans-serif;font-size:0.78rem;padding:6px 10px;outline:none;transition:border-color .2s}
+    #search-box::placeholder{color:var(--muted)}
+    #search-box:focus{border-color:var(--accent)}
+    #incident-list{flex:1 1 auto;overflow-y:auto;padding:0 8px 8px;scrollbar-width:thin;scrollbar-color:#2a3050 transparent}
+    #incident-list::-webkit-scrollbar{width:4px}
+    #incident-list::-webkit-scrollbar-thumb{background:#2a3050;border-radius:2px}
+    .inc-card{background:rgba(255,255,255,0.03);border:1px solid var(--border);border-left:3px solid var(--muted);border-radius:8px;padding:9px 11px;margin-bottom:6px;cursor:pointer;transition:background .15s,transform .1s}
+    .inc-card:hover{background:rgba(255,255,255,0.06);transform:translateX(2px)}
+    .inc-card.sev-4{border-left-color:var(--danger)}
+    .inc-card.sev-3{border-left-color:var(--warning)}
+    .inc-card.sev-2{border-left-color:#FFEE58}
+    .inc-card.sev-1{border-left-color:var(--accent2)}
+    .inc-card-top{display:flex;align-items:center;gap:6px;margin-bottom:5px;flex-wrap:wrap}
+    .road-badge{font-size:0.68rem;font-weight:700;padding:2px 7px;border-radius:4px;background:#005A9C;color:#fff}
+    .road-badge.nat{background:#1C8A43}
+    .road-badge.dept{background:#555}
+    .sev-badge{font-size:0.65rem;font-weight:600;padding:2px 6px;border-radius:4px;text-transform:uppercase}
+    .sev-badge.s4{background:rgba(230,0,0,.2);color:var(--danger);border:1px solid var(--danger)}
+    .sev-badge.s3{background:rgba(245,124,0,.2);color:var(--warning);border:1px solid var(--warning)}
+    .sev-badge.s2{background:rgba(255,238,88,.2);color:#FFEE58;border:1px solid #FFEE58}
+    .sev-badge.s1{background:rgba(0,255,136,.1);color:var(--accent2);border:1px solid var(--accent2)}
+    .sev-badge.s0{background:rgba(150,150,150,.1);color:var(--muted);border:1px solid var(--muted)}
+    .delay-chip{margin-left:auto;font-size:0.72rem;font-weight:700;color:var(--danger)}
+    .inc-desc{font-size:0.79rem;color:var(--text);line-height:1.35}
+    .inc-type{font-size:0.72rem;color:var(--accent);font-weight:600;margin-bottom:3px}
+    .inc-route{font-size:0.71rem;color:#64B5F6;margin-top:3px}
+    .inc-meta{font-size:0.68rem;color:var(--muted);margin-top:3px}
+    .empty-state{text-align:center;color:var(--muted);font-size:0.82rem;padding:30px 10px}
+    .empty-state span{display:block;font-size:2rem;margin-bottom:8px}
+    /* Map */
+    #map-container{flex:1 1 auto;position:relative;min-width:0}
+    #map{width:100%;height:100%}
+    .leaflet-control-attribution{font-size:9px!important}
+    .leaflet-popup-content-wrapper{background:var(--surface)!important;color:var(--text)!important;border:1px solid var(--border)!important;border-radius:10px!important;box-shadow:var(--shadow)!important}
+    .leaflet-popup-tip{background:var(--surface)!important}
+    .leaflet-popup-content{margin:10px 14px!important;font-family:'Inter',sans-serif!important}
+    /* Loading */
+    #loading{position:fixed;inset:0;background:rgba(10,14,26,.95);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;transition:opacity .4s}
+    #loading.hidden{opacity:0;pointer-events:none}
+    .spinner{width:44px;height:44px;border-radius:50%;border:3px solid rgba(0,198,255,.2);border-top-color:var(--accent);animation:spin .8s linear infinite;margin-bottom:16px}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    #loading p{font-size:0.85rem;color:var(--muted)}
+    #loading strong{display:block;font-size:1.1rem;color:var(--text);margin-bottom:6px}
+    /* Toast */
+    #toast{position:fixed;bottom:20px;right:20px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 16px;font-size:0.82rem;color:var(--text);box-shadow:var(--shadow);transform:translateY(80px);opacity:0;transition:transform .3s,opacity .3s;z-index:9000}
+    #toast.show{transform:translateY(0);opacity:1}
+    #toast.warn{border-left:3px solid var(--warning)}
+    #toast.ok{border-left:3px solid var(--accent2)}
+    /* Collapsible sections */
+    .sidebar-section { border-bottom:1px solid var(--border); transition: all 0.2s ease }
+    .sidebar-section summary { list-style: none; outline: none; }
+    .sidebar-section summary::-webkit-details-marker { display: none; }
+    .sidebar-section h3 { font-size:0.7rem;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:var(--muted);margin:0;padding:8px 12px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;user-select:none;transition:color 0.2s }
+    .sidebar-section h3:hover { color:var(--text); }
+    .sidebar-section h3::after { content: '▼'; font-size: 0.6rem; color: var(--muted); transition: transform 0.2s }
+    .sidebar-section[open] h3::after { transform: rotate(-180deg); }
+    .sidebar-content { padding: 4px 12px 10px; }
+    /* Filtres incidents */
+    #filter-bar{padding:4px 12px 6px;border-bottom:1px solid var(--border)}
+    #filter-bar label{font-size:0.6rem;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:3px;margin-top:4px}
+    .chip-row{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px}
+    .chip{font-size:0.65rem;font-weight:600;padding:2px 6px;border-radius:10px;border:1px solid var(--border);cursor:pointer;transition:all .15s;background:rgba(255,255,255,.04);color:var(--muted);user-select:none}
+    .chip:hover{border-color:var(--accent);color:var(--text)}
+    .chip.on{color:#fff;border-color:transparent}
+    .chip.on.sev-on-4{background:rgba(255,77,77,.8)}
+    .chip.on.sev-on-3{background:rgba(255,167,38,.8)}
+    .chip.on.sev-on-2{background:rgba(255,238,88,.75);color:#333}
+    .chip.on.sev-on-1{background:rgba(0,255,136,.7);color:#111}
+    .chip.on.sev-on-0{background:rgba(120,120,120,.6)}
+    .chip.type-on{background:rgba(0,198,255,.25);border-color:var(--accent);color:var(--accent)}
+    .sort-row{display:flex;gap:4px}
+    .sort-btn{flex:1;font-size:0.65rem;font-weight:600;padding:3px 2px;border-radius:6px;border:1px solid var(--border);background:rgba(255,255,255,.04);color:var(--muted);cursor:pointer;transition:all .15s;font-family:'Inter',sans-serif}
+    .sort-btn.active{background:rgba(0,198,255,.2);border-color:var(--accent);color:var(--accent)}
+  </style>
+</head>
+<body>
+<div id="loading"><div class="spinner"></div><strong>Plat'Est</strong><p id="loading-msg">Chargement des données…</p></div>
+<div id="toast"></div>
+<div id="app">
+  <header id="header">
+    <div><h1>🗺️ Plat'Est</h1><p>Observatoire trafic routier alsacien · Données temps réel</p></div>
+    <div id="header-right">
+      <div class="status-pill"><div class="status-dot"></div><span>En direct</span></div>
+      <div id="clock">––:––:––</div>
+      <button id="refresh-btn" onclick="loadAll()">⟳ Actualiser</button>
+    </div>
+  </header>
+  <div id="weather-bar">
+    <div class="weather-card" id="w-0"><div class="weather-city">Strasbourg</div></div>
+    <div class="weather-card" id="w-1"><div class="weather-city">Haguenau</div></div>
+    <div class="weather-card" id="w-2"><div class="weather-city">Colmar</div></div>
+    <div class="weather-card" id="w-3"><div class="weather-city">Mulhouse</div></div>
+  </div>
+  <div id="body">
+    <aside id="sidebar">
+      <details class="sidebar-section" open>
+        <summary><h3>🗺️ Couches</h3></summary>
+        <div class="sidebar-content">
+          <div class="layer-row"><label for="tog-flow">Flux trafic (couleurs)</label><input type="checkbox" class="toggle" id="tog-flow" checked onchange="toggleLayer('flow',this.checked)" /></div>
+          <div class="layer-row"><label for="tog-inc">Icônes incidents officiels</label><input type="checkbox" class="toggle" id="tog-inc" onchange="toggleLayer('incidents',this.checked)" /></div>
+          <div class="layer-row"><label for="tog-borders">Frontières dép. 67/68</label><input type="checkbox" class="toggle" id="tog-borders" checked onchange="toggleLayer('borders',this.checked)" /></div>
+        </div>
+      </details>
+      <details class="sidebar-section">
+        <summary><h3>🎯 Zoom rapide</h3></summary>
+        <div class="sidebar-content">
+          <div class="preset-grid" id="preset-grid"></div>
+        </div>
+      </details>
+      <div id="incident-header"><h3>🚧 Incidents en cours</h3><span id="inc-count">–</span></div>
+      <input type="text" id="search-box" placeholder="🔍 Filtrer par route ou description…" oninput="applyFilters()" />
+      <!-- Filtres -->
+      <div id="filter-bar">
+        <label>Sévérité</label>
+        <div class="chip-row" id="sev-chips">
+          <span class="chip sev-on-4 on" data-sev="4" onclick="toggleSev(4,this)">🔴 Critique</span>
+          <span class="chip sev-on-3 on" data-sev="3" onclick="toggleSev(3,this)">🟠 Majeur</span>
+          <span class="chip sev-on-2 on" data-sev="2" onclick="toggleSev(2,this)">🟡 Modéré</span>
+          <span class="chip sev-on-1 on" data-sev="1" onclick="toggleSev(1,this)">🟢 Mineur</span>
+          <span class="chip sev-on-0 on" data-sev="0" onclick="toggleSev(0,this)">⚫ Inconnu</span>
+        </div>
+        <label>Type</label>
+        <div class="chip-row" id="type-chips">
+          <span class="chip type-on" data-cat="all" onclick="toggleType('all',this)">★ Tous</span>
+          <span class="chip" data-cat="1" onclick="toggleType(1,this)">🚗 Accident</span>
+          <span class="chip" data-cat="9" onclick="toggleType(9,this)">🚧 Travaux</span>
+          <span class="chip" data-cat="6" onclick="toggleType(6,this)">🔴 Bouchon</span>
+          <span class="chip" data-cat="8" onclick="toggleType(8,this)">⛔ Barrée</span>
+          <span class="chip" data-cat="5" onclick="toggleType(5,this)">🧊 Verglas</span>
+        </div>
+        <label>Trier par</label>
+        <div class="sort-row">
+          <button class="sort-btn active" data-sort="sev" onclick="setSort('sev',this)">⬇️ Sévérité</button>
+          <button class="sort-btn" data-sort="delay" onclick="setSort('delay',this)">⏳ Retard</button>
+          <button class="sort-btn" data-sort="length" onclick="setSort('length',this)">📏 Longueur</button>
+        </div>
+      </div>
+      <div id="incident-list"><div class="empty-state"><span>⏳</span>Chargement…</div></div>
+    </aside>
+    <div id="map-container"><div id="map"></div></div>
+  </div>
+</div>
+<script>
+// Les appels TomTom passent par /api/tomtom (fonction Vercel) : la clé reste côté serveur
+const TOMTOM_PROXY="/api/tomtom";
+const CENTER=[48.3,7.5],ZOOM=9;
+const ALSACE_TILES=["6.7,48.5,8.2,49.1","6.7,47.9,8.2,48.5","6.7,47.4,7.8,47.9"];
+const WEATHER_CITIES=[{name:"Strasbourg",lat:48.5833,lon:7.75},{name:"Haguenau",lat:48.8167,lon:7.7833},{name:"Colmar",lat:48.0817,lon:7.3556},{name:"Mulhouse",lat:47.75,lon:7.3333}];
+const PRESETS=[{label:"Alsace",lat:48.3,lon:7.5,zoom:9},{label:"Strasbourg",lat:48.5833,lon:7.75,zoom:12},{label:"Colmar",lat:48.0817,lon:7.3556,zoom:12},{label:"Mulhouse",lat:47.75,lon:7.3333,zoom:12},{label:"Haguenau",lat:48.8167,lon:7.7833,zoom:12},{label:"Col de Saverne",lat:48.7412,lon:7.3621,zoom:13}];
+const SEV={0:"Inconnu",1:"Mineur",2:"Modéré",3:"Majeur",4:"Critique"};
+const WC={0:"☀️ Ensoleillé",1:"🌤️ Clair",2:"⛅ Nuageux",3:"☁️ Couvert",45:"🌫️ Brouillard",48:"🌫️ Brouillard givrant",51:"🌧️ Bruine légère",53:"🌧️ Bruine",55:"🌧️ Bruine dense",61:"🌧️ Pluie faible",63:"☔ Pluie modérée",65:"☔ Pluie forte",71:"❄️ Neige légère",73:"❄️ Neige",75:"❄️ Neige forte",80:"🌦️ Averses",81:"🌦️ Averses mod.",82:"⛈️ Averses fortes",95:"⛈️ Orage",96:"⛈️ Orage+grêle",99:"⛈️ Fort orage"};
+
+// Alsace bounding box (lat SW, lon SW, lat NE, lon NE)
+const ALSACE_BOUNDS = L.latLngBounds([[47.4, 6.7], [49.1, 8.3]]);
+
+const map=L.map("map",{center:CENTER,zoom:ZOOM,zoomControl:false,maxBounds:ALSACE_BOUNDS.pad(1.2),maxBoundsViscosity:0.4});
+L.control.zoom({position:"bottomright"}).addTo(map);
+
+// Flux TomTom restreint à la bbox Alsace
+const flowLayer=L.tileLayer(`${TOMTOM_PROXY}?path=traffic/map/4/tile/flow/relative/{z}/{x}/{y}.png&tileSize=256`,{opacity:.75,maxZoom:19,bounds:ALSACE_BOUNDS}).addTo(map);
+// Tuiles incidents restreintes à la bbox Alsace
+const incTileLayer=L.tileLayer(`${TOMTOM_PROXY}?path=traffic/map/4/tile/incidents/s2/{z}/{x}/{y}.png&tileSize=256`,{opacity:1,maxZoom:19,bounds:ALSACE_BOUNDS});
+
+// ── Fond de carte : ArcGIS World Street Map (gratuit) ──────────
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+  {attribution:'© Esri, HERE, Garmin, © OpenStreetMap contributors',maxZoom:19}).addTo(map);
+
+// ── Contour Alsace (67/68) intégré : aucune dépendance à data/alsace.geojson ──
+const ALSACE_GEOJSON = {"type":"FeatureCollection","features":[{"type":"Feature","properties":{"code":"67","nom":"Bas-Rhin"},"geometry":{"type":"Polygon","coordinates":[[[7.63529,49.05416],[7.67449,49.04504],[7.70732,49.05406],[7.73223,49.04436],[7.76943,49.04774],[7.79459,49.06579],[7.86879,49.03416],[7.89162,49.0476],[7.9167,49.04097],[7.93463,49.05781],[7.96305,49.04293],[7.98006,49.02612],[7.99671,49.02835],[8.04922,49.01418],[8.09138,48.98926],[8.1398,48.97845],[8.22274,48.97597],[8.23284,48.96698],[8.1958,48.95621],[8.13914,48.89289],[8.12458,48.87069],[8.09632,48.81038],[8.05894,48.78881],[8.02913,48.78648],[8.02283,48.76836],[8.00495,48.75878],[7.96972,48.75544],[7.96314,48.72135],[7.89089,48.6631],[7.83982,48.64137],[7.82871,48.61771],[7.80417,48.59233],[7.80024,48.57869],[7.80704,48.5211],[7.7947,48.50209],[7.7682,48.48966],[7.76489,48.45669],[7.73598,48.40416],[7.732,48.3754],[7.74503,48.33567],[7.73324,48.3178],[7.70315,48.30881],[7.6678,48.22391],[7.64599,48.20894],[7.62842,48.18234],[7.60115,48.15838],[7.59707,48.13315],[7.57731,48.12037],[7.51937,48.12611],[7.51253,48.15232],[7.47746,48.15656],[7.46759,48.169],[7.47694,48.20354],[7.44467,48.21742],[7.40891,48.2241],[7.39799,48.2325],[7.35026,48.24764],[7.32454,48.2453],[7.31265,48.26854],[7.27518,48.30523],[7.24173,48.30243],[7.19828,48.31047],[7.18482,48.33615],[7.12049,48.33335],[7.07852,48.35107],[7.10803,48.37699],[7.09587,48.42702],[7.11688,48.48489],[7.09769,48.48762],[7.12317,48.51359],[7.08063,48.51267],[7.06449,48.5234],[7.07936,48.53642],[7.11438,48.53739],[7.14709,48.52695],[7.16791,48.5276],[7.19249,48.54879],[7.21832,48.55264],[7.25628,48.58868],[7.25639,48.60151],[7.27843,48.6252],[7.2704,48.63054],[7.30435,48.6602],[7.2646,48.6627],[7.24226,48.69211],[7.26017,48.6943],[7.26663,48.71421],[7.28688,48.73134],[7.30645,48.76911],[7.29123,48.794],[7.26203,48.79776],[7.22866,48.82804],[7.19668,48.8283],[7.19588,48.8404],[7.14941,48.8447],[7.14667,48.8213],[7.12317,48.8045],[7.08817,48.79249],[7.0793,48.81404],[7.05451,48.8137],[7.05133,48.84629],[7.08662,48.84774],[7.08117,48.8641],[7.05025,48.85934],[7.04441,48.87353],[6.98892,48.89119],[6.9646,48.90453],[6.95555,48.92232],[6.97889,48.93334],[6.98922,48.95993],[7.03222,48.95605],[7.03836,48.99687],[7.05301,49.00729],[7.05491,49.03062],[7.07866,49.05036],[7.06811,49.06688],[7.10389,49.07416],[7.10808,49.04341],[7.11948,49.03722],[7.13051,49.00459],[7.17424,49.00637],[7.20931,48.98009],[7.23603,48.98782],[7.29395,48.97157],[7.32685,48.94337],[7.35888,48.9576],[7.39231,48.95271],[7.45163,48.96796],[7.47957,48.96139],[7.50187,48.94425],[7.53325,48.9335],[7.57839,48.9574],[7.59122,48.99372],[7.60955,49.02123],[7.64003,49.04911],[7.63529,49.05416]]]}},{"type":"Feature","properties":{"code":"68","nom":"Haut-Rhin"},"geometry":{"type":"Polygon","coordinates":[[[7.19828,48.31047],[7.24173,48.30243],[7.27518,48.30523],[7.31265,48.26854],[7.32454,48.2453],[7.35026,48.24764],[7.39799,48.2325],[7.40891,48.2241],[7.44467,48.21742],[7.47694,48.20354],[7.46759,48.169],[7.47746,48.15656],[7.51253,48.15232],[7.51937,48.12611],[7.57731,48.12037],[7.57996,48.10602],[7.56923,48.0814],[7.57162,48.03038],[7.60544,48.00376],[7.62209,47.97227],[7.58329,47.93112],[7.58352,47.90164],[7.5567,47.87994],[7.56355,47.85213],[7.53126,47.78676],[7.53224,47.7681],[7.54808,47.73959],[7.54347,47.72195],[7.51375,47.70282],[7.52235,47.66232],[7.56647,47.6329],[7.59217,47.59536],[7.58471,47.57726],[7.50611,47.54434],[7.52525,47.51986],[7.50733,47.51521],[7.50675,47.49563],[7.48686,47.48173],[7.43456,47.49793],[7.42269,47.48439],[7.45014,47.47529],[7.42029,47.44542],[7.38095,47.43186],[7.33756,47.44091],[7.28154,47.43422],[7.2463,47.4222],[7.23281,47.43881],[7.20668,47.43482],[7.17082,47.44435],[7.18658,47.49123],[7.15895,47.49076],[7.13035,47.50303],[7.13582,47.53646],[7.10622,47.55138],[7.08627,47.59256],[7.06472,47.60106],[7.02542,47.59268],[7.00498,47.61938],[7.01887,47.65067],[7.04631,47.6715],[7.02649,47.701],[7.03742,47.72164],[7.01176,47.74173],[6.97117,47.75268],[6.94043,47.77157],[6.924,47.77047],[6.86244,47.78637],[6.84845,47.80187],[6.84618,47.82295],[6.8976,47.83756],[6.92005,47.85029],[6.90021,47.89119],[6.92783,47.90821],[6.92076,47.94292],[6.94336,47.99796],[6.96141,48.00026],[7.00188,48.0224],[7.0298,48.0719],[7.0476,48.08006],[7.08416,48.12921],[7.05802,48.1377],[7.08533,48.18087],[7.11751,48.20799],[7.14782,48.26389],[7.15949,48.26875],[7.17244,48.29748],[7.19828,48.31047]]]}}]};
+
+// Masque hors Alsace : grisé au-dessus des tuiles (trafic compris), sous les marqueurs
+map.createPane('maskPane').style.zIndex = 350;
+const WORLD_RING = [[-89,-179],[-89,179],[89,179],[89,-179]];
+const ALSACE_RINGS = ALSACE_GEOJSON.features.map(f=>f.geometry.coordinates[0].map(([x,y])=>[y,x]));
+const maskLayer = L.polygon([WORLD_RING, ...ALSACE_RINGS], {
+  pane:'maskPane', stroke:false, fillColor:'#1a1f2e', fillOpacity:0.55, interactive:false
+}).addTo(map);
+const bordersLayer = L.geoJSON(ALSACE_GEOJSON, {
+  pane:'maskPane',
+  style:{color:'#C0392B', weight:2.5, opacity:0.9, dashArray:'6 4', fillOpacity:0, interactive:false}
+}).addTo(map);
+
+// Point dans le polygone (ray casting), coordonnées [lon,lat]
+function inRing(lon,lat,ring){
+  let inside=false;
+  for(let i=0,j=ring.length-1;i<ring.length;j=i++){
+    const [xi,yi]=ring[i],[xj,yj]=ring[j];
+    if(((yi>lat)!==(yj>lat)) && lon<(xj-xi)*(lat-yi)/(yj-yi)+xi) inside=!inside;
+  }
+  return inside;
+}
+const inAlsace=(lat,lon)=>ALSACE_GEOJSON.features.some(f=>inRing(lon,lat,f.geometry.coordinates[0]));
+
+function toggleLayer(n,on){
+  if(n==="flow")     on?flowLayer.addTo(map)    :map.removeLayer(flowLayer);
+  if(n==="incidents"){
+    if(on){ incTileLayer.addTo(map); incMarkers.addTo(map); }
+    else  { map.removeLayer(incTileLayer); map.removeLayer(incMarkers); }
+  }
+  if(n==="borders"){
+    if(on){ maskLayer.addTo(map); bordersLayer.addTo(map); }
+    else  { map.removeLayer(maskLayer); map.removeLayer(bordersLayer); }
+  }
+}
+
+const grid=document.getElementById("preset-grid");
+PRESETS.forEach(p=>{const b=document.createElement("button");b.className="preset-btn";b.textContent=p.label;b.onclick=()=>map.setView([p.lat,p.lon],p.zoom);grid.appendChild(b);});
+
+function updateClock(){document.getElementById("clock").textContent=new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit",second:"2-digit"});}
+updateClock();setInterval(updateClock,1000);
+
+function showToast(msg,type="ok"){const t=document.getElementById("toast");t.textContent=msg;t.className=`show ${type}`;setTimeout(()=>{t.className="";},4000);}
+
+async function fetchWeather(){
+  const res=await Promise.allSettled(WEATHER_CITIES.map(c=>fetch(`https://api.open-meteo.com/v1/forecast?latitude=${c.lat}&longitude=${c.lon}&current_weather=true`).then(r=>r.json())));
+  res.forEach((r,i)=>{
+    const card=document.getElementById(`w-${i}`),city=WEATHER_CITIES[i];
+    if(r.status==="fulfilled"){
+      const cw=r.value.current_weather||{};
+      const code=cw.weathercode??0;
+      const desc=WC[code]??"☁️ –";
+      const[icon,...words]=desc.split(" ");
+      card.innerHTML=`<div><div class="weather-city">${city.name}</div><div class="weather-cond">${words.join(" ")}</div><div class="weather-wind">💨 ${(cw.windspeed??0).toFixed(0)} km/h</div></div><div style="text-align:right"><div class="weather-icon">${icon}</div><div class="weather-temp">${cw.temperature??"–"}°C</div></div>`;
+    } else {
+      card.innerHTML=`<div class="weather-city">${city.name}</div><div class="weather-cond">–</div>`;
+    }
+  });
+}
+
+// Correspondance des catégories d'icônes TomTom → libellé français
+const EVT_LABELS = {
+  0:"Inconnu", 1:"Accident", 2:"Brouillard", 3:"Conditions dangereuses",
+  4:"Pluie", 5:"Verglas / Neige", 6:"Bouchon", 7:"Voie fermée",
+  8:"Route barrée", 9:"Travaux", 10:"Vent fort", 11:"Inondation",
+  14:"Véhicule en panne"
+};
+
+let allIncidents=[];
+const incMarkers=L.layerGroup().addTo(map);
+const SEV_COLORS=["#888","#00FF88","#FFEE58","#FFA726","#FF4D4D"];
+
+async function fetchIncidents(){
+  document.getElementById("loading-msg").textContent="Récupération des incidents TomTom (3 zones)…";
+  const FIELDS = '{incidents{type,geometry{coordinates},properties{id,magnitudeOfDelay,events{description,code,iconCategory},from,to,length,delay,roadNumbers}}}';
+  const results=await Promise.all(ALSACE_TILES.map(bbox=>{
+    const p = new URLSearchParams({path:'traffic/services/5/incidentDetails',bbox,language:'fr-FR',timeValidityFilter:'present',fields:FIELDS});
+    return fetch(`${TOMTOM_PROXY}?${p}`)
+      .then(r=>{if(!r.ok)throw new Error(`HTTP ${r.status}`);return r.json();})
+      .then(d=>{ if(d.incidents?.length) console.log('[TomTom] sample incident:',JSON.stringify(d.incidents[0],null,2)); return d.incidents||[]; })
+      .catch(e=>{console.warn("Tile error:",e);return[];});
+  }));
+  const seen=new Set();
+  allIncidents=[];
+  incMarkers.clearLayers();
+  results.flat().forEach(inc=>{
+    const props=inc.properties||{},geom=inc.geometry||{},coords=geom.coordinates;
+    if(!coords)return;
+    const first=Array.isArray(coords[0])?coords[0]:coords;
+    const[lon,lat]=[first[0],first[1]];
+    if(!lat||!lon)return;
+    if(!inAlsace(lat,lon))return; // ignorer les incidents hors 67/68
+    const uid=props.id||`${lat.toFixed(5)},${lon.toFixed(5)}`;
+    if(seen.has(uid))return;
+    seen.add(uid);
+
+    // Extraction enrichie
+    const events    = props.events||[];
+    const ev0       = events[0]||{};
+    const iconCat   = Number(ev0.iconCategory??ev0.code??0);
+    const evtLabel  = EVT_LABELS[iconCat]||"Incident";
+    // Préférer la description texte si disponible, sinon le libellé de catégorie
+    const evtDesc   = (ev0.description||ev0.shortDescription||evtLabel);
+    const fromLoc   = props.from||"";
+    const toLoc     = props.to  ||"";
+    // Construire une description claire
+    let desc = evtDesc;
+    if(fromLoc && toLoc) desc += ` · ${fromLoc} → ${toLoc}`;
+    else if(fromLoc)     desc += ` · depuis ${fromLoc}`;
+
+    const roads   = props.roadNumbers||[];
+    const road    = roads.length ? roads.join(" / ") : (fromLoc||"Route indéterminée");
+    const sev     = Number(props.magnitudeOfDelay??0);
+    const delay   = Number(props.delay??0);
+    const length  = Number(props.length??0);
+    const prob    = props.probabilityOfOccurrence||"";
+
+    const item={id:uid,lat,lon,road,desc,evtLabel,iconCat,fromLoc,toLoc,sev,delay,length,prob,marker:null};
+    allIncidents.push(item);
+
+    // Marqueur carte
+    const color=SEV_COLORS[sev]??"#888";
+    const m=L.circleMarker([lat,lon],{radius:7+sev,color,fillColor:color,fillOpacity:.75,weight:2});
+    item.marker = m; // stocker la référence du marqueur dans l'incident
+    const delayTxt = delay>0 ? `${Math.round(delay/60)} min de retard` : "Aucun retard estimé";
+    const lenTxt   = length>0 ? `${(length/1000).toFixed(1)} km` : "–";
+    m.bindPopup(`
+      <div style="min-width:220px;font-family:'Inter',sans-serif">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="font-size:1.1rem">${iconCat===1?"🚗":iconCat===9?"🚧":iconCat===6?"🔴":iconCat===8?"⛔":iconCat===5?"🧊":"⚠️"}</span>
+          <div>
+            <div style="font-weight:700;font-size:.9rem">${esc(road)}</div>
+            <div style="font-size:.72rem;color:#8892B0">${evtLabel} · ${SEV[sev]||"–"}</div>
+          </div>
+        </div>
+        <div style="font-size:.82rem;margin-bottom:6px;line-height:1.4">${esc(evtDesc)}</div>
+        ${fromLoc||toLoc?`<div style="font-size:.75rem;color:#00C6FF;margin-bottom:4px">📍 ${esc(fromLoc)}${toLoc?' → '+esc(toLoc):''}</div>`:""}
+        <div style="display:flex;gap:12px;font-size:.72rem;color:#8892B0;border-top:1px solid rgba(255,255,255,.07);padding-top:6px;margin-top:4px">
+          <span>⏳ ${delayTxt}</span>
+          <span>📏 ${lenTxt}</span>
+        </div>
+      </div>`);
+    m.on("click",()=>map.setView([lat,lon],14));
+    m.addTo(incMarkers);
+  });
+  applyFilters();
+  document.getElementById("inc-count").textContent=`${allIncidents.length} incidents`;
+}
+
+function renderList(list){
+  const el=document.getElementById("incident-list");
+  if(!list.length){el.innerHTML='<div class="empty-state"><span>✅</span>Aucun incident ne correspond aux filtres actifs.</div>';return;}
+  el.innerHTML=list.map(inc=>{
+    const rtype=inc.road.startsWith("A")?"":inc.road.startsWith("N")?"nat":"dept";
+    const dm=inc.delay>0?`${Math.round(inc.delay/60)} min`:"";
+    const emoji=inc.iconCat===1?"🚗":inc.iconCat===9?"🚧":inc.iconCat===6?"🔴":inc.iconCat===8?"⛔":inc.iconCat===5?"🧊":"⚠️";
+    const route=inc.fromLoc&&inc.toLoc?`<div class="inc-route">📍 ${esc(inc.fromLoc)} → ${esc(inc.toLoc)}</div>`
+              :inc.fromLoc?`<div class="inc-route">📍 ${esc(inc.fromLoc)}</div>`:""; 
+    return`<div class="inc-card sev-${inc.sev}" onclick="flyTo(${inc.lat},${inc.lon})">
+      <div class="inc-card-top">
+        <span class="road-badge ${rtype}">${esc(inc.road)}</span>
+        <span class="sev-badge s${inc.sev}">${SEV[inc.sev]||"–"}</span>
+        ${dm?`<span class="delay-chip">⏳ ${dm}</span>`:""}
+      </div>
+      <div class="inc-type">${emoji} ${esc(inc.evtLabel||"Incident")}</div>
+      <div class="inc-desc">${esc(inc.desc)}</div>
+      ${route}
+      <div class="inc-meta">${inc.length>0?"📏 "+( inc.length/1000).toFixed(1)+" km":""}</div>
+    </div>`;
+  }).join("");
+}
+
+function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
+function flyTo(lat,lon){map.flyTo([lat,lon],14,{duration:.8});}
+
+// ── État des filtres ─────────────────────────────────
+let activeSev  = new Set([0,1,2,3,4]); // toutes sévérités actives
+let activeType = 'all';                // 'all' ou numéro de catégorie
+let activeSort = 'sev';                // 'sev' | 'delay' | 'length'
+
+function toggleSev(sev, el) {
+  if(activeSev.has(sev)) { activeSev.delete(sev); el.classList.remove('on'); }
+  else                   { activeSev.add(sev);    el.classList.add('on'); }
+  applyFilters();
+}
+
+function toggleType(cat, el) {
+  // Désélectionner tous les types (enlever type-on), activer celui-ci
+  document.querySelectorAll('#type-chips .chip').forEach(c=>c.classList.remove('type-on'));
+  activeType = cat === 'all' ? 'all' : Number(cat);
+  el.classList.add('type-on');
+  applyFilters();
+}
+
+function setSort(key, el) {
+  activeSort = key;
+  document.querySelectorAll('.sort-btn').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+  applyFilters();
+}
+
+function applyFilters() {
+  const q = document.getElementById('search-box').value.toLowerCase();
+  let filtered = allIncidents.filter(inc => {
+    if (!activeSev.has(inc.sev)) return false;
+    if (activeType !== 'all' && inc.iconCat !== activeType) return false;
+    if (q && !inc.road.toLowerCase().includes(q) && !inc.desc.toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  // Tri
+  if (activeSort === 'sev')    filtered.sort((a,b)=>b.sev - a.sev);
+  if (activeSort === 'delay')  filtered.sort((a,b)=>b.delay - a.delay);
+  if (activeSort === 'length') filtered.sort((a,b)=>b.length - a.length);
+
+  // Sync marqueurs carte : afficher uniquement les incidents filtrés
+  const visibleIds = new Set(filtered.map(i=>i.id));
+  allIncidents.forEach(inc=>{
+    if(!inc.marker) return;
+    if(visibleIds.has(inc.id)) { if(!incMarkers.hasLayer(inc.marker)) incMarkers.addLayer(inc.marker); }
+    else                       { incMarkers.removeLayer(inc.marker); }
+  });
+
+  document.getElementById('inc-count').textContent = `${filtered.length}/${allIncidents.length}`;
+  renderList(filtered);
+}
+
+function filterIncidents(){ applyFilters(); }
+
+async function loadAll(){
+  const ld=document.getElementById("loading");
+  ld.classList.remove("hidden");
+  try{await Promise.all([fetchWeather(),fetchIncidents()]);showToast(`✅ ${allIncidents.length} incidents chargés`,"ok");}
+  catch(e){showToast("⚠️ Erreur partielle de chargement","warn");}
+  finally{ld.classList.add("hidden");}
+}
+setInterval(loadAll,5*60*1000);
+loadAll();
+</script>
+</body>
+</html>

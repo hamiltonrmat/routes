@@ -1,0 +1,13 @@
+# Secrets / local
+.env
+.env.*
+.vercel/
+.vscode/
+
+# Ancienne version Streamlit (contient la clé en dur) : ne pas publier
+app.py
+requirements.txt
+.streamlit/
+scripts/
+data/
+__pycache__/
